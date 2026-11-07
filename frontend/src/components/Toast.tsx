@@ -1,0 +1,1 @@
+export function Toast({ message, error = false }: { message: string; error?: boolean }) { return <div className={`toast ${error ? 'toast-error' : ''}`}><span>{error ? '!' : '✓'}</span>{message}</div>; }

@@ -1,0 +1,28 @@
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import authRoutes from './routes/auth';
+import crudRoutes from './routes/crud';
+import operationsRoutes from './routes/operations';
+import dashboardRoutes from './routes/dashboard';
+import { errorHandler } from './middleware/errors';
+import { requestLogger } from './middleware/requestLogger';
+import { config } from './config/env';
+
+export const app = express();
+app.set('trust proxy', config.NODE_ENV === 'production' ? 1 : 0);
+app.use(requestLogger);
+app.use(helmet());
+app.use(cors({ origin: config.FRONTEND_URL, credentials: true }));
+app.use(express.json({ limit: '1mb' }));
+app.use(cookieParser());
+app.use('/api', rateLimit({ windowMs: 15 * 60 * 1000, limit: 300, standardHeaders: 'draft-7', legacyHeaders: false }));
+app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'costa-sur-api' }));
+app.use('/api/auth', authRoutes);
+app.use('/api', crudRoutes);
+app.use('/api', operationsRoutes);
+app.use('/api', dashboardRoutes);
+app.use(errorHandler);

@@ -1,0 +1,1 @@
+export function Logo({ compact = false }: { compact?: boolean }) { return <div className="brand"><div className="brand-mark">CS</div>{!compact && <div><div className="brand-name">Distribuidora<br />Costa Sur</div><div className="brand-subtitle">Sistema Administrativo</div></div>}</div>; }

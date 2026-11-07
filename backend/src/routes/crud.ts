@@ -1,0 +1,36 @@
+import { Router } from 'express';
+import { z } from 'zod';
+import { prisma } from '../lib/prisma';
+import { authenticate, authorize } from '../middleware/auth';
+import { audit } from '../utils/audit';
+import { AuthRequest } from '../types';
+
+const router = Router();
+router.use(authenticate);
+
+const contactSchema = z.object({ name: z.string().min(2), nit: z.string().optional().nullable(), phone: z.string().optional().nullable(), email: z.string().email().optional().or(z.literal('')).nullable(), address: z.string().optional().nullable(), notes: z.string().optional().nullable() });
+const productSchema = z.object({ code: z.string().min(2), name: z.string().min(2), categoryId: z.string(), description: z.string().optional().nullable(), unit: z.string().default('Unidad'), purchasePrice: z.coerce.number().nonnegative(), salePrice: z.coerce.number().nonnegative(), minimumStock: z.coerce.number().int().nonnegative() });
+
+router.get('/clients', async (req, res, next) => { try { const q = String(req.query.q || ''); res.json(await prisma.client.findMany({ where: { active: true, OR: [{ name: { contains: q, mode: 'insensitive' } }, { nit: { contains: q, mode: 'insensitive' } }] }, orderBy: { name: 'asc' } })); } catch (e) { next(e); } });
+router.post('/clients', authorize('ADMIN', 'VENTAS'), async (req: AuthRequest, res, next) => { try { const data = contactSchema.parse(req.body); const item = await prisma.client.create({ data }); await audit(prisma, { action: 'CREAR', module: 'Clientes', reference: item.id, userId: req.user?.id }); res.status(201).json(item); } catch (e) { next(e); } });
+router.put('/clients/:id', authorize('ADMIN', 'VENTAS'), async (req: AuthRequest, res, next) => { try { const item = await prisma.client.update({ where: { id: String(req.params.id) }, data: contactSchema.partial().parse(req.body) }); await audit(prisma, { action: 'MODIFICAR', module: 'Clientes', reference: item.id, userId: req.user?.id }); res.json(item); } catch (e) { next(e); } });
+router.delete('/clients/:id', authorize('ADMIN', 'VENTAS'), async (req: AuthRequest, res, next) => { try { const item = await prisma.client.update({ where: { id: String(req.params.id) }, data: { active: false } }); await audit(prisma, { action: 'DESACTIVAR', module: 'Clientes', reference: item.id, userId: req.user?.id }); res.json(item); } catch (e) { next(e); } });
+
+router.get('/suppliers', async (req, res, next) => { try { const q = String(req.query.q || ''); res.json(await prisma.supplier.findMany({ where: { active: true, OR: [{ name: { contains: q, mode: 'insensitive' } }, { nit: { contains: q, mode: 'insensitive' } }] }, orderBy: { name: 'asc' } })); } catch (e) { next(e); } });
+router.post('/suppliers', authorize('ADMIN', 'BODEGA'), async (req: AuthRequest, res, next) => { try { const item = await prisma.supplier.create({ data: contactSchema.parse(req.body) }); await audit(prisma, { action: 'CREAR', module: 'Proveedores', reference: item.id, userId: req.user?.id }); res.status(201).json(item); } catch (e) { next(e); } });
+router.put('/suppliers/:id', authorize('ADMIN', 'BODEGA'), async (req: AuthRequest, res, next) => { try { const item = await prisma.supplier.update({ where: { id: String(req.params.id) }, data: contactSchema.partial().parse(req.body) }); res.json(item); } catch (e) { next(e); } });
+router.delete('/suppliers/:id', authorize('ADMIN', 'BODEGA'), async (req: AuthRequest, res, next) => { try { const item = await prisma.supplier.update({ where: { id: String(req.params.id) }, data: { active: false } }); await audit(prisma, { action: 'DESACTIVAR', module: 'Proveedores', reference: item.id, userId: req.user?.id }); res.json(item); } catch (e) { next(e); } });
+
+router.get('/categories', async (_req, res, next) => { try { res.json(await prisma.category.findMany({ where: { active: true }, orderBy: { name: 'asc' } })); } catch (e) { next(e); } });
+router.post('/categories', authorize('ADMIN', 'BODEGA'), async (req: AuthRequest, res, next) => { try { const item = await prisma.category.create({ data: { name: z.object({ name: z.string().min(2) }).parse(req.body).name } }); await audit(prisma, { action: 'CREAR', module: 'Categorías', reference: item.id, userId: req.user?.id }); res.status(201).json(item); } catch (e) { next(e); } });
+
+router.get('/products', async (req, res, next) => { try { const q = String(req.query.q || ''); const items = await prisma.product.findMany({ where: { active: true, OR: [{ name: { contains: q, mode: 'insensitive' } }, { code: { contains: q, mode: 'insensitive' } }] }, include: { category: true }, orderBy: { name: 'asc' } }); res.json(items.map((p) => ({ ...p, purchasePrice: Number(p.purchasePrice), salePrice: Number(p.salePrice), lowStock: p.stock <= p.minimumStock }))); } catch (e) { next(e); } });
+router.post('/products', authorize('ADMIN', 'BODEGA'), async (req: AuthRequest, res, next) => { try { const item = await prisma.product.create({ data: productSchema.parse(req.body) }); await audit(prisma, { action: 'CREAR', module: 'Productos', reference: item.id, userId: req.user?.id }); res.status(201).json(item); } catch (e) { next(e); } });
+router.put('/products/:id', authorize('ADMIN', 'BODEGA'), async (req: AuthRequest, res, next) => { try { const item = await prisma.product.update({ where: { id: String(req.params.id) }, data: productSchema.partial().parse(req.body) }); await audit(prisma, { action: 'MODIFICAR', module: 'Productos', reference: item.id, userId: req.user?.id }); res.json(item); } catch (e) { next(e); } });
+router.delete('/products/:id', authorize('ADMIN', 'BODEGA'), async (req: AuthRequest, res, next) => { try { const item = await prisma.product.update({ where: { id: String(req.params.id) }, data: { active: false } }); await audit(prisma, { action: 'DESACTIVAR', module: 'Productos', reference: item.id, userId: req.user?.id }); res.json(item); } catch (e) { next(e); } });
+
+router.get('/users', authorize('ADMIN'), async (_req, res, next) => { try { res.json(await prisma.user.findMany({ include: { role: true }, orderBy: { name: 'asc' } })); } catch (e) { next(e); } });
+router.post('/users', authorize('ADMIN'), async (req: AuthRequest, res, next) => { try { const data = z.object({ username: z.string().min(3), name: z.string().min(2), password: z.string().min(8), role: z.enum(['ADMIN', 'VENTAS', 'BODEGA', 'GERENCIA']) }).parse(req.body); const bcrypt = await import('bcryptjs'); const role = await prisma.role.findUniqueOrThrow({ where: { name: data.role } }); const item = await prisma.user.create({ data: { username: data.username, name: data.name, passwordHash: await bcrypt.hash(data.password, 12), roleId: role.id }, include: { role: true } }); await audit(prisma, { action: 'CREAR', module: 'Usuarios', reference: item.id, userId: req.user?.id }); res.status(201).json({ ...item, passwordHash: undefined }); } catch (e) { next(e); } });
+router.patch('/users/:id/status', authorize('ADMIN'), async (req: AuthRequest, res, next) => { try { const item = await prisma.user.update({ where: { id: String(req.params.id) }, data: { active: z.object({ active: z.boolean() }).parse(req.body).active } }); await audit(prisma, { action: 'CAMBIAR_ESTADO', module: 'Usuarios', reference: item.id, userId: req.user?.id }); res.json(item); } catch (e) { next(e); } });
+
+export default router;
